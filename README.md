@@ -22,10 +22,10 @@ afenv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-## Running the confusion matrix generation script
-To run the confusion_matrix_generator.py script with a dataset size argument, use the following command:
+## Running the experiments
+To run the confusion_matrix_generator.py script:
 ```bash
-python confusion_matrix_generator.py 28
+python experiments_adult_income_dataset.py
 ```
 
 ## Working with Jupyter Notebooks

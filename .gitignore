@@ -1,5 +1,6 @@
-.ipynb_checkpoints
 .idea
 afenv
-output
 notes.txt
+outputs
+notebooks/raw_experiment_adult_income_dataset.ipynb
+fairness/__pycache__
