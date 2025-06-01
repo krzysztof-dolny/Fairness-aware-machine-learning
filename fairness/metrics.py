@@ -18,7 +18,7 @@ def accuracy_equality(outputs, targets, groups):
     return ae, group_ae
 
 
-def statistical_parity(outputs, groups):
+def statistical_parity(outputs, targets, groups):
     pred_labels = (outputs > 0.5).float()
     unique_groups = torch.unique(groups)
     group_sp = []

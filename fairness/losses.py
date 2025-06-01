@@ -4,7 +4,45 @@ import torch.nn as nn
 from .metrics import accuracy_equality, statistical_parity, equal_opportunity, predictive_equality
 
 
-def fair_bce_loss(outputs, targets, groups, alpha=0.75, fairness_mode="AE", val=False, log=False):
+def fair_bce_loss(outputs, targets, groups, alpha=0.75, fairness_mode="SP", log=False):
+    """
+    Computes a combined loss function for fairness-aware binary classification.
+
+    This function applies a weighted sum of Binary Cross-Entropy (BCE) loss and a selected
+    group fairness loss. The weighting parameter alpha determines the trade-off between
+    predictive performance and fairness.
+
+    Args:
+        outputs (Tensor): Model outputs (probabilities).
+        targets (Tensor): Ground truth binary labels.
+        groups (Tensor): Group membership indicators.
+        alpha (float): Weighting factor. Must be in [0, 1].
+        fairness_mode (str): Fairness criterion to use: "AE", "SP", "EOP", "PE".
+        log (bool): Log outputs for debugging.
+
+    Returns:
+        Tensor: Combined loss value.
+    """
+    if not (0.0 <= alpha <= 1.0):
+        raise ValueError(f"Alpha must be between 0 and 1. Got: {alpha}")
+
+    fairness_loss_functions = {
+        "AE": loss_accuracy_equality,
+        "SP": loss_statistical_parity,
+        "EOP": loss_equal_opportunity,
+        "PE": loss_predictive_equality
+    }
+
+    fairness_score_functions = {
+        "AE": accuracy_equality,
+        "SP": statistical_parity,
+        "EOP": equal_opportunity,
+        "PE": predictive_equality
+    }
+
+    if fairness_mode not in fairness_loss_functions:
+        raise ValueError(f"Unsupported fairness mode: {fairness_mode}")
+
     outputs = outputs.squeeze()
     targets = targets.squeeze()
     groups = groups.squeeze()
@@ -12,24 +50,12 @@ def fair_bce_loss(outputs, targets, groups, alpha=0.75, fairness_mode="AE", val=
     bce_loss_fn = nn.BCELoss()
     base_loss = bce_loss_fn(outputs, targets)
 
-    if fairness_mode == "AE":
-        fair_loss = loss_accuracy_equality(outputs, targets, groups)
-        fair_score, group_fair_scores = accuracy_equality(outputs, targets, groups)
-    elif fairness_mode == "SP":
-        fair_loss = loss_statistical_parity(outputs, groups)
-        fair_score, group_fair_scores = statistical_parity(outputs, groups)
-    elif fairness_mode == "EOP":
-        fair_loss = loss_equal_opportunity(outputs, targets, groups)
-        fair_score, group_fair_scores = equal_opportunity(outputs, targets, groups)
-    elif fairness_mode == "PE":
-        fair_loss = loss_predictive_equality(outputs, targets, groups)
-        fair_score, group_fair_scores = predictive_equality(outputs, targets, groups)
-    else:
-        raise ValueError(f"Unsupported fairness mode: {fairness_mode}")
+    fair_loss = fairness_loss_functions[fairness_mode](outputs, targets, groups)
+    fair_score, group_fair_scores = fairness_score_functions[fairness_mode](outputs, targets, groups)
 
-    total_loss = (alpha * base_loss) + ((1 - alpha) * fair_loss)
+    total_loss = (alpha * base_loss / 1.3863) + ((1 - alpha) * fair_loss / 1)
 
-    if log and not val:
+    if log:
         group_str = ', '.join([
             f'G{int(g.item())}: {v:.3f}' for g, v in zip(torch.unique(groups), group_fair_scores)
         ])
@@ -40,23 +66,37 @@ def fair_bce_loss(outputs, targets, groups, alpha=0.75, fairness_mode="AE", val=
     return total_loss
 
 
-def calculate_alpha(epoch, total_epochs, alpha, alpha_mode="const", raw_alpha=None):
+def calculate_alpha(epoch, total_epochs, alpha, alpha_mode="const"):
+    """
+    Computes the value of the alpha parameter used in the fairness-aware loss function.
+
+    This function supports different scheduling strategies for adjusting the alpha parameter
+    during training. The parameter alpha controls the trade-off between predictive performance
+    and fairness. Depending on the selected mode, alpha can remain constant or change linearly
+    over training epochs.
+
+    Args:
+        epoch (int): Current epoch number.
+        total_epochs (int): Total number of training epochs.
+        alpha (float): Base value of alpha used to define scheduling range.
+        alpha_mode (str): Scheduling strategy for alpha. Options are:
+                            "const" (constant),
+                            "linear_increase",
+                            "linear_decrease".
+
+    Returns:
+        float: Computed alpha value for the current epoch.
+    """
     if alpha_mode == "const":
         return alpha
-    elif alpha_mode == "linear_decrease":
-        alpha_start = alpha
-        alpha_end = 1 - alpha
-        slope = (alpha_end - alpha_start) / total_epochs
-        return alpha_start + slope * epoch
+
+    alpha_min = 0.5 - alpha / 2
+    alpha_max = 0.5 + alpha / 2
+
+    if alpha_mode == "linear_decrease":
+        return alpha_max - (alpha_max - alpha_min) * (epoch / total_epochs)
     elif alpha_mode == "linear_increase":
-        alpha_start = 1 - alpha
-        alpha_end = alpha
-        slope = (alpha_end - alpha_start) / total_epochs
-        return alpha_start + slope * epoch
-    # elif alpha_mode == "learnable":
-    #    if raw_alpha is None:
-    #        raise ValueError("raw_alpha must be provided when using learnable alpha.")
-    #    return torch.sigmoid(raw_alpha)
+        return alpha_min + (alpha_max - alpha_min) * (epoch / total_epochs)
     else:
         raise ValueError(f"Unsupported alpha mode: {alpha_mode}")
 
@@ -83,7 +123,7 @@ def loss_accuracy_equality(outputs, targets, groups, t=25):
     return loss
 
 
-def loss_statistical_parity(outputs, groups):
+def loss_statistical_parity(outputs, targets, groups):
     unique_groups = torch.unique(groups)
     group_means = []
 
