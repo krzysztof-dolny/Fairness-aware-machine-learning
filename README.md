@@ -28,9 +28,10 @@ pip install -r requirements.txt
 
 5. To run the confusion_matrix_generator.py script:
 ```bash
-python experiments_adult_income_dataset.py
+python confusion_matrix_generator.py 30 8
 ```
-Generates all possible combinations of a confusion matrix of length k that sum to n. The results are saved in Parquet format and used for large-scale fairness measures analysis.
+Generates all possible distributions of 30 classification outcomes across an 8-cell confusion matrix representing binary classification results for protected and unprotected groups
+The results are saved in Parquet format and used for large-scale fairness measures analysis.
 
 6. To run the fairness_measures_analysis.py script:
 ```bash

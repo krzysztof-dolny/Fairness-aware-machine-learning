@@ -17,7 +17,7 @@ def fair_bce_loss(outputs, targets, groups, alpha=0.75, fairness_mode="SP", log=
         targets (Tensor): Ground truth binary labels.
         groups (Tensor): Group membership indicators.
         alpha (float): Weighting factor. Must be in [0, 1].
-        fairness_mode (str): Fairness criterion to use: "AE", "SP", "EOP", "PE".
+        fairness_mode (str): Fairness criterion to use: "AE", "SP", "EO", "PE".
         log (bool): Log outputs for debugging.
 
     Returns:
@@ -29,14 +29,14 @@ def fair_bce_loss(outputs, targets, groups, alpha=0.75, fairness_mode="SP", log=
     fairness_loss_functions = {
         "AE": loss_accuracy_equality,
         "SP": loss_statistical_parity,
-        "EOP": loss_equal_opportunity,
+        "EO": loss_equal_opportunity,
         "PE": loss_predictive_equality
     }
 
     fairness_score_functions = {
         "AE": accuracy_equality,
         "SP": statistical_parity,
-        "EOP": equal_opportunity,
+        "EO": equal_opportunity,
         "PE": predictive_equality
     }
 
@@ -106,19 +106,19 @@ def loss_accuracy_equality(outputs, targets, groups, t=25):
         return torch.sigmoid((x - 0.5) * t)
 
     soft_preds = soft_threshold(outputs)
-    soft_acc = 1.0 - torch.abs(soft_preds - targets)
+    soft_ac = 1.0 - torch.abs(soft_preds - targets)
 
     unique_groups = torch.unique(groups)
-    group_accs = []
+    group_acs = []
 
     for group in unique_groups:
         mask = (groups == group)
         if mask.sum() == 0:
             continue
-        group_accs.append(soft_acc[mask].mean())
+        group_acs.append(soft_ac[mask].mean())
 
-    acc_tensor = torch.stack(group_accs)
-    loss = torch.max(acc_tensor) - torch.min(acc_tensor)
+    ac_tensor = torch.stack(group_acs)
+    loss = torch.max(ac_tensor) - torch.min(ac_tensor)
 
     return loss
 
@@ -152,9 +152,9 @@ def loss_equal_opportunity(outputs, targets, groups):
         group_tprs.append(tpr)
 
     group_tprs_tensor = torch.stack(group_tprs)
-    loss_eop = torch.max(group_tprs_tensor) - torch.min(group_tprs_tensor)
+    loss_eo = torch.max(group_tprs_tensor) - torch.min(group_tprs_tensor)
 
-    return loss_eop
+    return loss_eo
 
 
 def loss_predictive_equality(outputs, targets, groups):

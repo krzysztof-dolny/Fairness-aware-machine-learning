@@ -14,13 +14,25 @@ os.makedirs(output_dir, exist_ok=True)
 
 # Constants
 RESULTS_CSV_PATH = os.path.join(output_dir, 'results.csv')
-COLUMNS_ORDER = ['ml_algorithm', 'fairness_mode', 'alpha_mode', 'alpha_value', 'test_accuracy', 'fairness_score']
+COLUMNS_ORDER = ['ml_algorithm', 'fairness_mode', 'alpha_mode', 'alpha_value',
+                 'test_accuracy', 'var_accuracy', 'fairness_score', 'var_fairness']
 
 
 def load_and_prepare_data(path):
     """Load CSV data and prepare the DataFrame."""
     df = pd.read_csv(path)
+
     df['fairness_score'] = 1 - df['fairness_score']
+
+    df = df.groupby(
+        ['ml_algorithm', 'fairness_mode', 'alpha_mode', 'alpha_value']
+    ).agg(
+        test_accuracy=('test_accuracy', 'mean'),
+        fairness_score=('fairness_score', 'mean'),
+        var_accuracy=('test_accuracy', 'var'),
+        var_fairness=('fairness_score', 'var')
+    ).reset_index()
+
     return df
 
 
@@ -45,7 +57,7 @@ def print_aggregated_stats(df):
     """Print statistical summary grouped by ML algorithm, fairness mode, and alpha mode."""
     for group in ['ml_algorithm', 'fairness_mode', 'alpha_mode']:
         print(f"\n=== Statistics grouped by {group} ===")
-        stats = df.groupby(group)[['test_accuracy', 'fairness_score']].agg(['min', 'median', 'mean', 'std', 'max']).round(4)
+        stats = df.groupby(group)[['test_accuracy', 'fairness_score']].agg(['min', 'median', 'mean', 'var', 'max']).round(4)
         print(tabulate(stats, headers='keys', tablefmt='psql'))
 
 
@@ -53,6 +65,7 @@ def plot_line_charts(df, model_name):
     """Plot line charts for accuracy and fairness per alpha_value."""
     df_model = df[df['ml_algorithm'] == model_name]
     unique_alpha_modes = df_model['alpha_mode'].unique()
+    unique_fairness_modes = ['AE', 'SP', 'EO', 'PE']
 
     for alpha_mode in unique_alpha_modes:
         # Create subplot for current alpha_mode
@@ -62,31 +75,35 @@ def plot_line_charts(df, model_name):
         df_alpha = df_model[df_model['alpha_mode'] == alpha_mode]
 
         # --- Accuracy ---
-        for mode in df_alpha['fairness_mode'].unique():
+        for mode in unique_fairness_modes:
             subset = df_alpha[df_alpha['fairness_mode'] == mode]
-            axes[0].plot(subset['alpha_value'], subset['test_accuracy'], marker='o', label=mode)
+            # axes[0].plot(subset['alpha_value'], subset['test_accuracy'], marker='o', label=mode)
+            axes[0].errorbar(subset['alpha_value'], subset['test_accuracy'], yerr=subset['var_accuracy'],
+                             fmt='o-', markersize=3, capsize=3, label=mode)
 
         axes[0].set_title(f"Accuracy vs Alpha for \"{alpha_mode}\" scheduling strategy", fontsize=14)
-        axes[0].set_xlabel("Alpha", fontsize=12)
-        axes[0].set_ylabel("Accuracy", fontsize=12)
+        axes[0].set_xlabel(r"$\alpha_0$", fontsize=14)
+        axes[0].set_ylabel("AC", fontsize=14)
         axes[0].legend(title="Fairness criterion", loc='lower right', fontsize=12, title_fontsize=12)
         axes[0].grid(True)
         axes[0].set_xlim(-0.02, 1.02)
-        axes[0].set_ylim(0.5, 1)
+        axes[0].set_ylim(0.6, 1.02)
         axes[0].tick_params(axis='both', labelsize=12)
 
         # --- Fairness ---
-        for mode in df_alpha['fairness_mode'].unique():
+        for mode in unique_fairness_modes:
             subset = df_alpha[df_alpha['fairness_mode'] == mode]
-            axes[1].plot(subset['alpha_value'], subset['fairness_score'], marker='o', label=mode)
+            # axes[1].plot(subset['alpha_value'], subset['fairness_score'], marker='o', label=mode)
+            axes[1].errorbar(subset['alpha_value'], subset['fairness_score'], yerr=subset['var_fairness'],
+                             fmt='o-', markersize=3, capsize=3, label=mode)
 
         axes[1].set_title(f"Fairness vs Alpha for \"{alpha_mode}\" scheduling strategy", fontsize=14)
-        axes[1].set_xlabel("Alpha", fontsize=12)
-        axes[1].set_ylabel("Fairness", fontsize=12)
+        axes[1].set_xlabel(r"$\alpha_0$", fontsize=14)
+        axes[1].set_ylabel("Fairness", fontsize=14)
         axes[1].legend(title="Fairness criterion", loc='lower right', fontsize=12, title_fontsize=12)
         axes[1].grid(True)
         axes[1].set_xlim(-0.02, 1.02)
-        axes[1].set_ylim(0.5, 1.02)
+        axes[1].set_ylim(0.6, 1.02)
         axes[1].tick_params(axis='both', labelsize=12)
 
         # --- Figure ---
@@ -117,7 +134,7 @@ def plot_scatter_charts(df, model_name):
     """Plot scatter chart for each fairness mode of a given model."""
     df_model = df[df['ml_algorithm'] == model_name].copy()
     df_model['score'] = df_model['test_accuracy'] + df_model['fairness_score']
-    unique_fairness_modes = df_model['fairness_mode'].unique()
+    unique_fairness_modes = ['AE', 'SP', 'EO', 'PE']
 
     # Subplot
     fig, axes = plt.subplots(2, 2, figsize=(12, 10))
@@ -140,18 +157,22 @@ def plot_scatter_charts(df, model_name):
         pareto_df = df_mode[pareto_mask].sort_values(by="test_accuracy")
 
         # Plot Pareto front
-        ax.plot(pareto_df['test_accuracy'], pareto_df['fairness_score'], color='red', linewidth=2, zorder=2, label="_nolegend_")
+        ax.plot(pareto_df['test_accuracy'], pareto_df['fairness_score'],
+                color='red', linewidth=2, zorder=2, label="_nolegend_")
 
         # Plot points
         for alpha_mode in alpha_modes:
             df_subset = df_mode[df_mode['alpha_mode'] == alpha_mode]
-            ax.scatter(df_subset['test_accuracy'], df_subset['fairness_score'], alpha=0.6, zorder=3, label=f"{alpha_mode}", color=color_dict[alpha_mode])
+            ax.scatter(df_subset['test_accuracy'], df_subset['fairness_score'],
+                       alpha=0.6, zorder=3, label=f"{alpha_mode}", color=color_dict[alpha_mode], s=25)
 
         ax.set_title(f"Accuracy vs Fairness for {mode}", fontsize=14)
-        ax.set_xlabel("Accuracy", fontsize=12)
-        ax.set_ylabel("Fairness", fontsize=12)
+        ax.set_xlabel("AC", fontsize=12)
+        ax.set_ylabel(mode, fontsize=12)
         ax.tick_params(axis='both', labelsize=12)
         ax.grid(True)
+        ax.set_xlim(0.54, 0.86)
+        ax.set_ylim(0.7, 1.02)
         ax.legend(title="$\\alpha$ scheduling strategy", loc='lower left', fontsize=11, title_fontsize=11)
 
     plt.tight_layout(rect=(0, 0.03, 1, 0.95))

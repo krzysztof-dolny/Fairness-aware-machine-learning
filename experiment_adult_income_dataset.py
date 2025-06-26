@@ -122,7 +122,7 @@ def load_model(ml_algorithm, input_dim):
 # =========================== #
 def train_model(model, optimizer, epochs, patience, alpha, alpha_mode, fairness_mode,
                 X_train, y_train, sex_train, X_val, y_val):
-    best_val_acc, best_model_state, epochs_no_improve = 0.0, None, 0
+    best_val_ac, best_model_state, epochs_no_improve = 0.0, None, 0
 
     for epoch in range(epochs):
         model.train()
@@ -137,9 +137,9 @@ def train_model(model, optimizer, epochs, patience, alpha, alpha_mode, fairness_
         model.eval()
         with torch.no_grad():
             val_outputs = model(X_val)
-            val_acc = ((val_outputs > 0.5).float() == y_val).float().mean().item()
-        if val_acc > best_val_acc:
-            best_val_acc, best_model_state, epochs_no_improve = val_acc, model.state_dict(), 0
+            val_ac = ((val_outputs > 0.5).float() == y_val).float().mean().item()
+        if val_ac > best_val_ac:
+            best_val_ac, best_model_state, epochs_no_improve = val_ac, model.state_dict(), 0
         else:
             epochs_no_improve += 1
         if epochs_no_improve > patience:
@@ -153,20 +153,20 @@ def test_model(model, X_test, y_test, sex_test, fairness_mode):
     with torch.no_grad():
         outputs = model(X_test)
         preds = (outputs > 0.5).float()
-        acc = (preds == y_test).float().mean().item()
+        ac = (preds == y_test).float().mean().item()
 
         if fairness_mode == "AE":
             fairness_score, _ = accuracy_equality(outputs.squeeze(), y_test, sex_test)
         elif fairness_mode == "SP":
             fairness_score, _ = statistical_parity(outputs, y_test.squeeze(), sex_test)
-        elif fairness_mode == "EOP":
+        elif fairness_mode == "EO":
             fairness_score, _ = equal_opportunity(outputs, y_test.squeeze(), sex_test)
         elif fairness_mode == "PE":
             fairness_score, _ = predictive_equality(outputs, y_test.squeeze(), sex_test)
         else:
             raise ValueError(f"Unsupported fairness mode: {fairness_mode}")
 
-    return acc, fairness_score
+    return ac, fairness_score
 
 
 # =========================== #
@@ -174,60 +174,65 @@ def test_model(model, X_test, y_test, sex_test, fairness_mode):
 # =========================== #
 def run_experiments(config, X_train, y_train, sex_train, X_val, y_val, sex_val, X_test, y_test, sex_test):
     results = []
-    best_score = best_acc = -float("inf")
+    best_score = best_ac = -float("inf")
     best_fairness = float("inf")
-    best_model_score = best_model_acc = best_model_fair = None
-    best_result_score = best_result_acc = best_result_fair = None
+    best_model_score = best_model_ac = best_model_fair = None
+    best_result_score = best_result_ac = best_result_fair = None
 
-    for ml_algorithm in config['ml_algorithms']:
-        for fairness_mode in config['fairness_modes']:
-            for alpha_mode in config["alpha_modes"]:
-                for alpha in config["alpha_values"]:
-                    print(f"\nRunning {ml_algorithm}"
-                          f" | alpha={alpha}, mode={alpha_mode}, fairness={fairness_mode}")
+    for seed in config['seeds']:
+        set_seed(seed)
+        for ml_algorithm in config['ml_algorithms']:
+            for fairness_mode in config['fairness_modes']:
+                for alpha_mode in config["alpha_modes"]:
+                    for alpha in config["alpha_values"]:
+                        print(f"\nRunning {ml_algorithm}"
+                              f" | alpha={alpha}, mode={alpha_mode}, fairness={fairness_mode}")
 
-                    model = load_model(ml_algorithm, X_train.shape[1])
-                    optimizer = optim.Adam(model.parameters(), lr=0.01)
+                        model = load_model(ml_algorithm, X_train.shape[1])
+                        optimizer = optim.Adam(model.parameters(), lr=0.01)
 
-                    best_model_state = train_model(model, optimizer, config["epochs"], config["patience"], alpha,
-                                                   alpha_mode, fairness_mode, X_train, y_train, sex_train, X_val, y_val)
-                    model.load_state_dict(best_model_state)
+                        best_model_state = train_model(
+                            model, optimizer, config["epochs"], config["patience"], alpha,
+                            alpha_mode, fairness_mode, X_train, y_train, sex_train, X_val, y_val)
+                        model.load_state_dict(best_model_state)
 
-                    acc, fairness = test_model(model, X_test, y_test, sex_test, fairness_mode)
-                    print(f"Test Accuracy: {acc:.4f}, Fairness score: {fairness:.4f}")
+                        test_accuracy, fairness = test_model(model, X_test, y_test, sex_test, fairness_mode)
+                        print(f"Test Accuracy: {test_accuracy:.4f}, Fairness score: {fairness:.4f}")
 
-                    row = {
-                        "ml_algorithm": ml_algorithm,
-                        "fairness_mode": fairness_mode,
-                        "fairness_score": fairness,
-                        "test_accuracy": acc,
-                        "alpha_mode": alpha_mode,
-                        "alpha_value": alpha
-                    }
-                    results.append(row)
+                        row = {
+                            "ml_algorithm": ml_algorithm,
+                            "fairness_mode": fairness_mode,
+                            "fairness_score": fairness,
+                            "test_accuracy": test_accuracy,
+                            "alpha_mode": alpha_mode,
+                            "alpha_value": alpha
+                        }
+                        results.append(row)
 
-                    score = acc - fairness
-                    if score > best_score:
-                        best_score, best_model_score, best_result_score = score, best_model_state, row
-                    if acc > best_acc or (acc == best_acc and fairness < best_result_acc["fairness_score"]):
-                        best_acc, best_model_acc, best_result_acc = acc, best_model_state, row
-                    if fairness < best_fairness or (fairness == best_fairness and acc > best_result_fair["test_accuracy"]):
-                        best_fairness, best_model_fair, best_result_fair = fairness, best_model_state, row
+                        score = test_accuracy - fairness
+                        if score > best_score:
+                            best_score, best_model_score, best_result_score = score, best_model_state, row
+                        if (test_accuracy > best_ac or
+                                (test_accuracy == best_ac and fairness < best_result_ac["fairness_score"])):
+                            best_ac, best_model_ac, best_result_ac = test_accuracy, best_model_state, row
+                        if (fairness < best_fairness or
+                                (fairness == best_fairness and test_accuracy > best_result_fair["test_accuracy"])):
+                            best_fairness, best_model_fair, best_result_fair = fairness, best_model_state, row
 
     print("\nBest score config:", best_result_score)
-    print("\nBest accuracy config:", best_result_acc)
+    print("\nBest accuracy config:", best_result_ac)
     print("\nBest fairness config:", best_result_fair)
 
-    return save_results(results, output_dir, best_model_score, best_model_acc, best_model_fair)
+    return save_results(results, output_dir, best_model_score, best_model_ac, best_model_fair)
 
 
 # =========================== #
 #    Additional Functions     #
 # =========================== #
-def save_results(results, output_dir, model_score, model_acc, model_fair):
+def save_results(results, output_dir, model_score, model_ac, model_fair):
     torch.save(model_score, os.path.join(output_dir, "best_model_score.pth"))
-    torch.save(model_acc, os.path.join(output_dir, "best_model_acc.pth"))
-    torch.save(model_fair, os.path.join(output_dir, "best_model_fair.pth"))
+    torch.save(model_ac, os.path.join(output_dir, "best_model_accuracy.pth"))
+    torch.save(model_fair, os.path.join(output_dir, "best_model_fairness.pth"))
 
     df = pd.DataFrame(results)
     file = os.path.join(output_dir, "results.csv")

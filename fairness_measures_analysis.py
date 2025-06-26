@@ -29,9 +29,9 @@ CM_FILE_PATH = os.path.join(output_dir, "confusion_matrix.parquet")
 BIN_SIZE = 0.01
 CUSTOM_TICKS = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
 METRIC_LABELS = {
-    'acc': 'Accuracy',
-    'pr': 'Precision',
-    'rc': 'Recall'
+    'ac': 'AC',
+    'pr': 'PR',
+    'rc': 'RC'
 }
 
 
@@ -53,7 +53,7 @@ def load_parquet_confusion_matrix(file_path):
 
 def calculate_metrics(df):
     """Calculate classification and fairness metrics from the confusion matrix columns."""
-    df['acc'] = abs((df[0] + df[3] + df[4] + df[7]) /
+    df['ac'] = abs((df[0] + df[3] + df[4] + df[7]) /
                     (df[0] + df[1] + df[2] + df[3] + df[4] + df[5] + df[6] + df[7]))
 
     df['pr'] = abs((df[0] + df[4]) / (df[0] + df[2] + df[4] + df[6]))
@@ -66,7 +66,7 @@ def calculate_metrics(df):
     df['sp'] = abs(((df[0] + df[2]) / (df[0] + df[1] + df[2] + df[3])) -
                    ((df[4] + df[6]) / (df[4] + df[5] + df[6] + df[7])))
 
-    df['eop'] = abs((df[0] / (df[0] + df[1])) - (df[4] / (df[4] + df[5])))
+    df['eo'] = abs((df[0] / (df[0] + df[1])) - (df[4] / (df[4] + df[5])))
 
     df['pe'] = abs((df[2] / (df[2] + df[3])) - (df[6] / (df[6] + df[7])))
 
@@ -84,17 +84,17 @@ def generate_heatmaps(df, main_metric, save_path):
     """Generate heatmaps and histograms for predictive performance metrics against fairness metrics."""
     # Create 2D distributions between the predictive performance metric and fairness metrics
     heatmaps = {
-        'Accuracy Equality': df.groupby([f'{main_metric}_bin', 'ae_bin']).size().unstack(fill_value=0) / len(df),
-        'Statistical Parity': df.groupby([f'{main_metric}_bin', 'sp_bin']).size().unstack(fill_value=0) / len(df),
-        'Equal Opportunity': df.groupby([f'{main_metric}_bin', 'eop_bin']).size().unstack(fill_value=0) / len(df),
-        'Predictive Equality': df.groupby([f'{main_metric}_bin', 'pe_bin']).size().unstack(fill_value=0) / len(df),
+        'AE': df.groupby([f'{main_metric}_bin', 'ae_bin']).size().unstack(fill_value=0) / len(df),
+        'SP': df.groupby([f'{main_metric}_bin', 'sp_bin']).size().unstack(fill_value=0) / len(df),
+        'EO': df.groupby([f'{main_metric}_bin', 'eo_bin']).size().unstack(fill_value=0) / len(df),
+        'PE': df.groupby([f'{main_metric}_bin', 'pe_bin']).size().unstack(fill_value=0) / len(df),
     }
 
     fig = plt.figure(figsize=(28, 8))
     gs = gridspec.GridSpec(2, 4, height_ratios=[1, 5], hspace=0.05, wspace=0.2)
     axes_hist = [plt.subplot(gs[0, i]) for i in range(4)]  # Histograms
     axes_heat = [plt.subplot(gs[1, i]) for i in range(4)]  # Heatmaps
-    cbar_ax = fig.add_axes((0.92, 0.1, 0.015, 0.6))  # Colorbar axis
+    cbar_ax = fig.add_axes((0.92, 0.1, 0.015, 0.7))  # Colorbar axis
 
     for i, (ax_hist, ax_heat, title) in enumerate(zip(axes_hist, axes_heat, heatmaps.keys())):
         data = heatmaps[title]
@@ -105,11 +105,11 @@ def generate_heatmaps(df, main_metric, save_path):
             ax=ax_heat,
             cbar=ax_heat is axes_heat[-1],
             cbar_ax=cbar_ax if ax_heat is axes_heat[-1] else None,
-            vmax=0.003 if main_metric == 'acc' else 0.001
+            vmax=0.003 if main_metric == 'ac' else 0.001
         )
 
         ax_heat.set_xlabel(METRIC_LABELS.get(main_metric, main_metric), fontsize=14)
-        ax_heat.set_ylabel(title, fontsize=14)
+        ax_heat.set_ylabel(title, fontsize=16)
 
         # Format tick labels
         xticks = [j for j, val in enumerate(data.columns) if val in CUSTOM_TICKS]
@@ -118,9 +118,9 @@ def generate_heatmaps(df, main_metric, save_path):
         ylabels = [f"{val:.2f}" for val in data.index if val in CUSTOM_TICKS]
 
         ax_heat.set_xticks(xticks)
-        ax_heat.set_xticklabels(xlabels, rotation=45, fontsize=14)
+        ax_heat.set_xticklabels(xlabels, rotation=45, fontsize=16)
         ax_heat.set_yticks(yticks)
-        ax_heat.set_yticklabels(ylabels, fontsize=14)
+        ax_heat.set_yticklabels(ylabels, fontsize=16)
         ax_heat.invert_yaxis()
 
         # Histogram above heatmap
@@ -132,11 +132,11 @@ def generate_heatmaps(df, main_metric, save_path):
             spine.set_visible(False)
 
     # Colorbar and layout
-    cbar_ax.set_ylabel('Proportion of all results', fontsize=14)
-    cbar_ax.tick_params(labelsize=14)
+    cbar_ax.set_ylabel('Proportion of all results', fontsize=16)
+    cbar_ax.tick_params(labelsize=16)
     fig.subplots_adjust(left=0.05, right=0.9, top=0.95, bottom=0.1, wspace=0.2, hspace=0.05)
 
-    fig.savefig(save_path, dpi=200, bbox_inches='tight')
+    fig.savefig(save_path, dpi=250, bbox_inches='tight')
     plt.close(fig)
 
     print(f"Saved heatmap '{os.path.basename(save_path)}' to: {save_path}\n")
@@ -150,7 +150,8 @@ def generate_heatmaps(df, main_metric, save_path):
         table.append([title, f"{percentage:.4f}%"])
 
     print(tabulate(table,
-                   headers=["Fairness Measure", f"% Results with {METRIC_LABELS.get(main_metric, main_metric)} > 0.5"]))
+                   headers=["Fairness Measure", f"% Results with {METRIC_LABELS.get(main_metric, main_metric)} > 0.5 &"
+                                                f" Fairness > 0.5"]))
     print()  # newline after table
 
 
@@ -162,9 +163,9 @@ def main():
     df = load_parquet_confusion_matrix(CM_FILE_PATH)
 
     df = calculate_metrics(df)
-    df = bin_metrics(df, ['acc', 'pr', 'rc', 'ae', 'sp', 'eop', 'pe'])
+    df = bin_metrics(df, ['ac', 'pr', 'rc', 'ae', 'sp', 'eo', 'pe'])
 
-    generate_heatmaps(df, 'acc', os.path.join(output_dir, "heatmaps_accuracy.png"))
+    generate_heatmaps(df, 'ac', os.path.join(output_dir, "heatmaps_accuracy.png"))
     generate_heatmaps(df, 'pr', os.path.join(output_dir, "heatmaps_precision.png"))
     generate_heatmaps(df, 'rc', os.path.join(output_dir, "heatmaps_recall.png"))
 

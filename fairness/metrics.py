@@ -38,18 +38,18 @@ def statistical_parity(outputs, targets, groups):
 def equal_opportunity(outputs, targets, groups):
     pred_labels = (outputs > 0.5).float()
     unique_groups = torch.unique(groups)
-    group_eop = []
+    group_eo = []
 
     for group in unique_groups:
         mask = (groups == group) & (targets == 1)
         if mask.sum() == 0:
             continue
-        eop = (pred_labels[mask] == 1).float().mean()
-        group_eop.append(eop.item())
+        eo = (pred_labels[mask] == 1).float().mean()
+        group_eo.append(eo.item())
 
-    eop = max(group_eop) - min(group_eop)
+    eo = max(group_eo) - min(group_eo)
 
-    return eop, group_eop
+    return eo, group_eo
 
 
 def predictive_equality(outputs, targets, groups):
